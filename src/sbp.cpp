@@ -49,10 +49,10 @@
 GPSDriverSBP::GPSDriverSBP(GPSCallbackPtr callback,
                            void *callback_user,
                            struct vehicle_gps_position_s *gps_position) :
-               GPSHelper(callback, callback_user),
-               _gps_position(gps_position)
+    GPSHelper(callback, callback_user),
+    _gps_position(gps_position)
 {
-   //Nothing
+    //Nothing
 }
 
 int
@@ -62,9 +62,19 @@ GPSDriverSBP::configure(unsigned &baudrate, OutputMode output_mode)
         GPS_WARN("SBP: Unsupported Output Mode %i", (int)output_mode);
         return -1;
     }
-   baudrate = 115200;
 
-   return 0;
+    if (baudrate > 0 && baudrate != SBP_BAUDRATE) {
+        return -1;
+    }
+
+    /* set baudrate first */
+    if (GPSHelper::setBaudrate(SBP_BAUDRATE) != 0) {
+        return -1;
+    }
+
+    baudrate = SBP_BAUDRATE;
+
+    return 0;
 
 }
 
@@ -78,45 +88,20 @@ GPSDriverSBP::receive(unsigned timeout)
     int j = 0;
     while (true) {
         int ret = read(buf, sizeof(buf), timeout);
-         printf("This is ret %d \n", ret);
-         printf("This is timeout %d \n", timeout);
 
         if (ret > 0) {
             /* first read whatever is left */
-            printf("Reading: %d\t Ret: %d\n %", buf[j], ret);
-
             if (j < ret) {
                 /* pass received bytes to the packet decoder */
                 while (j < ret) {
-                    printf("Reading: %d\t Ret: %d\n %", buf[j], ret);
-                    _gps_position->lat = (int32_t)57.378301e7f;
-                    _gps_position->lon = (int32_t)108.538777e7f;
-                    _gps_position->alt = (int32_t)1200e3f;
-                    _gps_position->alt_ellipsoid = 10000;
-                    _gps_position->s_variance_m_s = 0.5f;
-                    _gps_position->c_variance_rad = 0.1f;
-                    _gps_position->fix_type = 3;
-                    _gps_position->eph = 0.8f;
-                    _gps_position->epv = 1.2f;
-                    _gps_position->hdop = 0.9f;
-                    _gps_position->vdop = 0.9f;
-                    _gps_position->vel_n_m_s = 0.0f;
-                    _gps_position->vel_e_m_s = 0.0f;
-                    _gps_position->vel_d_m_s = 0.0f;
-                    _gps_position->vel_m_s = 0.0f;
-                    _gps_position->cog_rad = 0.0f;
-                    _gps_position->vel_ned_valid = true;
-                    _gps_position->satellites_used = 9;
-                    _gps_position->heading = NAN;
-                    _gps_position->heading_offset = NAN;
+                    if (parseChar(buf[j]) > 0) {
+                        printf("Character Parsed");
+                        return 1;
+                    }
                     j++;
                 }
                 /* everything is read */
                 j = 0;
-
-
-                /* no time and satellite information simulated */
-
                 printf("Everything is read\n");
                 return 1;
             }
@@ -130,5 +115,161 @@ GPSDriverSBP::receive(unsigned timeout)
             return -1;
         }
 
-      }
+    }
+}
+
+int
+GPSDriverSBP::parseChar(const uint8_t b)
+{
+    int ret = 0;
+    switch (_decode_state) {
+
+    /* Expecting Preamble */
+    case SBP_DECODE_PREAMBLE:
+        if (b == 0x55) {
+            printf("Preamble Found!!!!\n");
+            _rx_buff_count = 0;
+            //_rx_buff = 0;
+            _decode_state = SBP_DECODE_MESSAGEID;
+        } else {
+            decodeInit();
+        }
+        break;
+
+        /* Expecting Message ID */
+    case SBP_DECODE_MESSAGEID:
+        *((uint8_t*)&(_rx_msgtype) + _rx_buff_count) = b;
+        crc_add(b);
+        _rx_buff_count++;
+        if(_rx_buff_count >= 2){
+            _rx_buff_count = 0;
+            //_rx_msgtype = _rx_buff;
+            printf("Message ID = %d\n",_rx_msgtype);
+            _decode_state = SBP_DECODE_SENDER;
+        }
+        break;
+
+        /* Expecting Sender */
+    case SBP_DECODE_SENDER:
+        *((uint8_t*)&(_rx_send_id) + _rx_buff_count) = b;
+        crc_add(b);
+        _rx_buff_count++;
+        if(_rx_buff_count >= 2){
+            _rx_buff_count = 0;
+            //_rx_send_id = _rx_buff;
+            printf("Sender ID = %d\n",_rx_send_id);
+            _decode_state = SBP_DECODE_LENGTH;
+        }
+        break;
+
+        /* Expecting Length */
+    case SBP_DECODE_LENGTH:
+        _rx_payload_len = b;
+        crc_add(b);
+        _rx_buff_count = 0;
+        printf("Payload Length = %d\n",_rx_payload_len);
+        _decode_state = SBP_DECODE_PAYLOAD;
+        //decodeInit();
+        break;
+
+        /* Expecting payload */
+    case SBP_DECODE_PAYLOAD:
+        *((uint8_t*)&(_rx_buff) + _rx_buff_count) = b;
+        crc_add(b);
+        printf("payload buff %d\t,%d\n", b,_rx_buff);
+        _rx_buff_count++;
+        if(_rx_buff_count >= _rx_payload_len){
+            _rx_buff_count = 0;
+            for(int k=0; k >= _rx_payload_len;k++){
+                printf("Buffer %d\n",_rx_buff[k]);
+            }
+
+            switch (_rx_msgtype) {
+            case SBP_HEARTBEAT_MSGTYPE:
+                printf("I'm a heartbeat message! %d\n",_rx_buff);
+                // memcpy(sbp_buf_t.sbp_heartbeat, _rx_buff,4);
+                //memcpy(&sbp_buf_t.sbp_heartbeat, _rx_buff, sizeof(struct sbp_heartbeat_packet_t));
+
+                break;
+
+            case SBP_GPS_TIME_MSGTYPE:
+                break;
+
+            case SBP_POS_LLH_MSGTYPE:
+                //memcpy(&sbp_pos_llh_payload, _rx_buff, sizeof(struct sbp_heartbeat_packet_t));
+                break;
+
+            case SBP_DOPS_MSGTYPE:
+                break;
+
+            case SBP_VEL_NED_MSGTYPE:
+                break;
+
+            case SBP_EXT_EVENT_MSGTYPE:
+                break;
+
+            default:
+                break;
+            }
+
+            //            if (ret < 0) {
+            //                // payload not handled, discard message
+            //                decodeInit();
+
+            //            } else if (ret > 0) {
+            //                // payload complete, expecting checksum
+            //                _decode_state = SBP_DECODE_CRC;
+
+            //            } else {
+            //                // expecting more payload, stay in state UBX_DECODE_PAYLOAD
+            //            }
+            _decode_state = SBP_DECODE_CRC;
+        }
+
+        break;
+
+        /* Expecting first checksum byte */
+    case SBP_DECODE_CRC:
+        *((uint8_t*)&(_rx_crc) + _rx_buff_count) = b;
+        _rx_buff_count++;
+        printf("I'm here");
+        if(_rx_buff_count >= 2) {
+            printf("CRC buffer = %d\n", _rx_crc);
+            printf("CRC Calc = %d\n", _crc);
+            if (_rx_crc == _crc){
+                printf("Checksum!!\n");
+                decodeInit();
+                break;
+            } else {
+                printf("Checksum failed!\n");
+                decodeInit();
+                ret = 0;
+            }
+
+        }
+
+
+    default:
+        break;
+    }
+
+    return ret;
+}
+
+void
+GPSDriverSBP::decodeInit()
+{
+    //_rx_buff=0;
+    _rx_msgtype=0;
+    _rx_send_id=0;
+    _rx_payload_len=0;
+    _crc = 0;
+    _rx_buff_count = 0;
+    _decode_state = SBP_DECODE_PREAMBLE;
+}
+
+void
+GPSDriverSBP::crc_add(const uint8_t value)
+{
+    _crc = _rx_crc + value;
 }
