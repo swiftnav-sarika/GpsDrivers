@@ -122,6 +122,7 @@ int
 GPSDriverSBP::parseChar(const uint8_t b)
 {
     int ret = 0;
+    uint16_t crc = 0;
     switch (_decode_state) {
 
     /* Expecting Preamble */
@@ -129,7 +130,6 @@ GPSDriverSBP::parseChar(const uint8_t b)
         if (b == 0x55) {
             printf("Preamble Found!!!!\n");
             _rx_buff_count = 0;
-            //_rx_buff = 0;
             _decode_state = SBP_DECODE_MESSAGEID;
         } else {
             decodeInit();
@@ -139,11 +139,9 @@ GPSDriverSBP::parseChar(const uint8_t b)
         /* Expecting Message ID */
     case SBP_DECODE_MESSAGEID:
         *((uint8_t*)&(_rx_msgtype) + _rx_buff_count) = b;
-        crc_add(b);
         _rx_buff_count++;
         if(_rx_buff_count >= 2){
             _rx_buff_count = 0;
-            //_rx_msgtype = _rx_buff;
             printf("Message ID = %d\n",_rx_msgtype);
             _decode_state = SBP_DECODE_SENDER;
         }
@@ -152,11 +150,9 @@ GPSDriverSBP::parseChar(const uint8_t b)
         /* Expecting Sender */
     case SBP_DECODE_SENDER:
         *((uint8_t*)&(_rx_send_id) + _rx_buff_count) = b;
-        crc_add(b);
         _rx_buff_count++;
         if(_rx_buff_count >= 2){
             _rx_buff_count = 0;
-            //_rx_send_id = _rx_buff;
             printf("Sender ID = %d\n",_rx_send_id);
             _decode_state = SBP_DECODE_LENGTH;
         }
@@ -165,31 +161,25 @@ GPSDriverSBP::parseChar(const uint8_t b)
         /* Expecting Length */
     case SBP_DECODE_LENGTH:
         _rx_payload_len = b;
-        crc_add(b);
         _rx_buff_count = 0;
         printf("Payload Length = %d\n",_rx_payload_len);
         _decode_state = SBP_DECODE_PAYLOAD;
-        //decodeInit();
         break;
 
         /* Expecting payload */
     case SBP_DECODE_PAYLOAD:
         *((uint8_t*)&(_rx_buff) + _rx_buff_count) = b;
-        crc_add(b);
-        printf("payload buff %d\t,%d\n", b,_rx_buff);
         _rx_buff_count++;
         if(_rx_buff_count >= _rx_payload_len){
             _rx_buff_count = 0;
             for(int k=0; k >= _rx_payload_len;k++){
                 printf("Buffer %d\n",_rx_buff[k]);
             }
-
             switch (_rx_msgtype) {
             case SBP_HEARTBEAT_MSGTYPE:
-                printf("I'm a heartbeat message! %d\n",_rx_buff);
+                printf("I'm a heartbeat message!\n");
                 // memcpy(sbp_buf_t.sbp_heartbeat, _rx_buff,4);
                 //memcpy(&sbp_buf_t.sbp_heartbeat, _rx_buff, sizeof(struct sbp_heartbeat_packet_t));
-
                 break;
 
             case SBP_GPS_TIME_MSGTYPE:
@@ -232,11 +222,14 @@ GPSDriverSBP::parseChar(const uint8_t b)
     case SBP_DECODE_CRC:
         *((uint8_t*)&(_rx_crc) + _rx_buff_count) = b;
         _rx_buff_count++;
-        printf("I'm here");
         if(_rx_buff_count >= 2) {
-            printf("CRC buffer = %d\n", _rx_crc);
-            printf("CRC Calc = %d\n", _crc);
-            if (_rx_crc == _crc){
+            crc = crc16_ccitt((uint8_t*)&(_rx_msgtype), 2, 0);
+            crc = crc16_ccitt((uint8_t*)&(_rx_send_id), 2, crc);
+            crc = crc16_ccitt(&_rx_payload_len, 1, crc);
+            crc = crc16_ccitt(_rx_buff, _rx_payload_len, crc);
+            printf("crc = %d\n", crc);
+            printf("_rx_crc %d\n",_rx_crc);
+            if (_rx_crc == crc){
                 printf("Checksum!!\n");
                 decodeInit();
                 break;
@@ -268,8 +261,3 @@ GPSDriverSBP::decodeInit()
     _decode_state = SBP_DECODE_PREAMBLE;
 }
 
-void
-GPSDriverSBP::crc_add(const uint8_t value)
-{
-    _crc = _rx_crc + value;
-}

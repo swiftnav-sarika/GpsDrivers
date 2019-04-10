@@ -41,6 +41,7 @@
 #pragma once
 
 #include "gps_helper.h"
+#include "edc.h"
 #include "../../definitions.h"
 
 #define SBP_TIMEOUT_10HZ    200
