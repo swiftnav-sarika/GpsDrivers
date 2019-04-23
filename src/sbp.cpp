@@ -170,37 +170,14 @@ GPSDriverSBP::parseChar(const uint8_t b)
     case SBP_DECODE_PAYLOAD:
         *((uint8_t*)&(_rx_buff) + _rx_buff_count) = b;
         _rx_buff_count++;
+        //printf("Payload %d\n",b);
         if(_rx_buff_count >= _rx_payload_len){
             _rx_buff_count = 0;
             for(int k=0; k >= _rx_payload_len;k++){
                 printf("Buffer %d\n",_rx_buff[k]);
+
             }
-            switch (_rx_msgtype) {
-            case SBP_HEARTBEAT_MSGTYPE:
-                printf("I'm a heartbeat message!\n");
-                // memcpy(sbp_buf_t.sbp_heartbeat, _rx_buff,4);
-                //memcpy(&sbp_buf_t.sbp_heartbeat, _rx_buff, sizeof(struct sbp_heartbeat_packet_t));
-                break;
 
-            case SBP_GPS_TIME_MSGTYPE:
-                break;
-
-            case SBP_POS_LLH_MSGTYPE:
-                //memcpy(&sbp_pos_llh_payload, _rx_buff, sizeof(struct sbp_heartbeat_packet_t));
-                break;
-
-            case SBP_DOPS_MSGTYPE:
-                break;
-
-            case SBP_VEL_NED_MSGTYPE:
-                break;
-
-            case SBP_EXT_EVENT_MSGTYPE:
-                break;
-
-            default:
-                break;
-            }
 
             //            if (ret < 0) {
             //                // payload not handled, discard message
@@ -218,7 +195,7 @@ GPSDriverSBP::parseChar(const uint8_t b)
 
         break;
 
-        /* Expecting first checksum byte */
+        /* Expecting checksum byte */
     case SBP_DECODE_CRC:
         *((uint8_t*)&(_rx_crc) + _rx_buff_count) = b;
         _rx_buff_count++;
@@ -231,6 +208,7 @@ GPSDriverSBP::parseChar(const uint8_t b)
             printf("_rx_crc %d\n",_rx_crc);
             if (_rx_crc == crc){
                 printf("Checksum!!\n");
+                processPayload();
                 decodeInit();
                 break;
             } else {
@@ -241,12 +219,80 @@ GPSDriverSBP::parseChar(const uint8_t b)
 
         }
 
+    default:
+        break;
+    }
+    return ret;
+}
+void
+GPSDriverSBP::processPayload()
+{
+
+    switch (_rx_msgtype) {
+    case SBP_HEARTBEAT_MSGTYPE:
+        printf("I'm a heartbeat message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_heartbeat),(uint8_t*)&(_rx_buff), sizeof(sbp_heartbeat_packet_t));
+        printf("sys_error_flag %d\n",_sbp_buf.sbp_heartbeat.sys_error_flag);
+        printf("io_error_flag %d\n",_sbp_buf.sbp_heartbeat.io_error_flag);
+        printf("nap_error_flag %d\n",_sbp_buf.sbp_heartbeat.nap_error_flag);
+        printf("protocol_minor %d\n",_sbp_buf.sbp_heartbeat.protocol_minor);
+        printf("protocol_major %d\n",_sbp_buf.sbp_heartbeat.protocol_major);
+        printf("ext_antenna_short %d\n",_sbp_buf.sbp_heartbeat.ext_antenna_short);
+        printf("ext_antenna_present %d\n",_sbp_buf.sbp_heartbeat.ext_antenna_present);
+        break;
+
+    case SBP_GPS_TIME_MSGTYPE:
+        printf("I'm a GPS TIME message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_gps_time),(uint8_t*)&(_rx_buff), sizeof(sbp_gpstime_packet_t));
+        printf("wn %d\n",_sbp_buf.sbp_gps_time.wn);
+        printf("tow %d\n",_sbp_buf.sbp_gps_time.tow);
+        printf("ns %d\n",_sbp_buf.sbp_gps_time.ns);
+        printf("time_src %d\n",_sbp_buf.sbp_gps_time.flags.time_src);
+
+        break;
+
+    case SBP_POS_LLH_MSGTYPE:
+        printf("I'm a POS LLH message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_pos_llh),(uint8_t*)&(_rx_buff), sizeof(sbp_pos_llh_packet_t));
+        printf("tow %d\n",_sbp_buf.sbp_pos_llh.tow);
+        printf("lat %f\n",_sbp_buf.sbp_pos_llh.lat);
+        printf("lon %f\n",_sbp_buf.sbp_pos_llh.lon);
+        printf("height %f\n",_sbp_buf.sbp_pos_llh.height);
+        printf("h_accuracy %d\n",_sbp_buf.sbp_pos_llh.h_accuracy);
+        printf("v_accuracy %d\n",_sbp_buf.sbp_pos_llh.v_accuracy);
+        printf("n_sats %d\n",_sbp_buf.sbp_pos_llh.n_sats);
+        printf("flags %d\n",_sbp_buf.sbp_pos_llh.flags);
+        _gps_position->lat = _sbp_buf.sbp_pos_llh.lat;
+        _gps_position->lon = _sbp_buf.sbp_pos_llh.lon;
+        _gps_position->alt = _sbp_buf.sbp_pos_llh.height;
+        _gps_position->eph = _sbp_buf.sbp_pos_llh.h_accuracy;
+        _gps_position->epv = _sbp_buf.sbp_pos_llh.v_accuracy;
+        _gps_position->fix_type = _sbp_buf.sbp_pos_llh.flags.fix_mode;
+        _gps_position->satellites_used = _sbp_buf.sbp_pos_llh.n_sats;
+        break;
+
+    case SBP_DOPS_MSGTYPE:
+        printf("I'm a SBP DOPS message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_dops),(uint8_t*)&(_rx_buff), sizeof(sbp_dops_packet_t));
+
+        _gps_position->hdop = _sbp_buf.sbp_dops.hdop;
+        _gps_position->vdop = _sbp_buf.sbp_dops.vdop;
+        break;
+
+    case SBP_VEL_NED_MSGTYPE:
+        printf("I'm a SBP VEL NED message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_vel_ned),(uint8_t*)&(_rx_buff), sizeof(sbp_vel_ned_packet_t));
+        break;
+
+    case SBP_EXT_EVENT_MSGTYPE:
+        printf("I'm a SBP EXT_EVENT message!\n");
+        memcpy((uint8_t *)&(_sbp_buf.sbp_ext_event),(uint8_t*)&(_rx_buff), sizeof(sbp_ext_event_packet_t));
+        break;
 
     default:
         break;
     }
 
-    return ret;
 }
 
 void

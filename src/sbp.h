@@ -48,7 +48,7 @@
 #define SBP_BAUDRATE        115200
 #define SBP_PREAMBLE        0x55
 
-// Message types supported by this driver
+// Message types supported byk this driver
 #define SBP_STARTUP_MSGTYPE         0xFF00
 #define SBP_HEARTBEAT_MSGTYPE       0xFFFF
 #define SBP_GPS_TIME_MSGTYPE        0x0102
@@ -74,15 +74,15 @@ typedef enum {
 #pragma pack(push, 1)
 //Heartbeat
 typedef struct {
-    bool sys_error_flag : 1;        //1
-    bool io_error_flag : 1;         //1
-    bool nap_error_flag : 1;        //1
-    uint8_t reserved : 1;           //5
-    uint8_t protocol_minor : 5;     //8
-    uint8_t protocol_major : 8;     //8
-    uint8_t reserved2 : 6;          //6
-    bool ext_antenna_short : 1;     //1
-    bool ext_antenna_present : 1;   //1
+    bool sys_error_flag : 1;
+    bool io_error_flag : 1;
+    bool nap_error_flag : 1;
+    uint8_t reserved : 5;
+    uint8_t protocol_minor : 8;
+    uint8_t protocol_major : 8;
+    uint8_t reserved2 : 6;
+    bool ext_antenna_short : 1;
+    bool ext_antenna_present : 1;
 } sbp_heartbeat_packet_t;       //4 bytes
 
 //GPS Time
@@ -98,14 +98,18 @@ typedef struct {
 
 //Postion LLH
 typedef struct {
-    uint32_t tow : 4;               //4
-    double lat;                 //8
-    double lon;                 //8
-    double height;              //8
-    uint16_t h_accuracy : 8;        //8
-    uint16_t v_accuracy : 8;        //8
-    uint8_t n_sats : 6;             //6
-    uint8_t flags : 1;              //1
+    uint32_t tow;
+    double lat;
+    double lon;
+    double height;
+    uint16_t h_accuracy;
+    uint16_t v_accuracy;
+    uint8_t n_sats;
+    struct flags {
+        uint8_t fix_mode:3;  //< Fix mode (0: invalid, 1: GNSS Solution, 2: Propagated
+        uint8_t ins_mode:2;  //< Inertial navigation mode (0: none, 1: INS used)
+        uint8_t res:3;       //< Reserved
+    } flags;
 } sbp_pos_llh_packet_t;         //34 bytes
 
 //Dilution of Precision
@@ -157,9 +161,12 @@ typedef struct {
 
 typedef union {
     sbp_heartbeat_packet_t		sbp_heartbeat;
-    sbp_pos_llh_packet_t		sbp_pos_llh_payload;
+    sbp_gpstime_packet_t        sbp_gps_time;
+    sbp_pos_llh_packet_t		sbp_pos_llh;
+    sbp_dops_packet_t           sbp_dops;
+    sbp_vel_ned_packet_t        sbp_vel_ned;
+    sbp_ext_event_packet_t      sbp_ext_event;
 } sbp_buf_t;
-
 
 class GPSDriverSBP : public GPSHelper
 {
@@ -181,15 +188,18 @@ private:
     uint16_t _rx_crc;
     uint16_t _crc;
     sbp_decode_state_t _decode_state{};
-
-    sbp_buf_t		_buf{};
+    
+    sbp_buf_t _sbp_buf{};
 
     struct vehicle_gps_position_s *_gps_position {nullptr};
     /**
      * Parse the binary SBP packet
      */
     int parseChar(const uint8_t b);
-    void crc_add(const uint8_t value);
+    /**
+     * Parse the binary SBP packet
+     */
+    void processPayload();
 
     /**
      * Reset the parse state machine for a fresh start
