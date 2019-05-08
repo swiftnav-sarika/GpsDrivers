@@ -49,14 +49,14 @@
 #define SBP_PREAMBLE        0x55
 
 // Message types supported byk this driver
-#define SBP_STARTUP_MSGTYPE         0xFF00
+//#define SBP_STARTUP_MSGTYPE         0xFF00
 #define SBP_HEARTBEAT_MSGTYPE       0xFFFF
 #define SBP_GPS_TIME_MSGTYPE        0x0102
 #define SBP_DOPS_MSGTYPE            0x0208
 #define SBP_POS_LLH_MSGTYPE         0x020A
-#define SBP_BASELINE_NED_MSGTYPE    0x020C
+//#define SBP_BASELINE_NED_MSGTYPE    0x020C
 #define SBP_VEL_NED_MSGTYPE         0x020E
-#define SBP_TRACKING_STATE_MSGTYPE  0x0013
+//#define SBP_TRACKING_STATE_MSGTYPE  0x0013
 #define SBP_EXT_EVENT_MSGTYPE       0x0101
 
 typedef enum {
@@ -66,7 +66,6 @@ typedef enum {
     SBP_DECODE_LENGTH,
     SBP_DECODE_PAYLOAD,
     SBP_DECODE_CRC,
-
 } sbp_decode_state_t;
 
 
@@ -87,45 +86,45 @@ typedef struct {
 
 //GPS Time
 typedef struct {
-    uint16_t wn;     //< GPS week number (unit: weeks)
-    uint32_t tow;    //< GPS Time of Week rounded to the nearest ms (unit: ms)
-    int32_t ns;      //< Nanosecond remainder of rounded tow (unit: ns)
+    uint16_t wn;            //< GPS week number (unit: weeks)
+    uint32_t tow;           //< GPS Time of Week rounded to the nearest ms (unit: ms)
+    int32_t ns;             //< Nanosecond remainder of rounded tow (unit: ns)
     struct flags {
-        uint8_t time_src:3;  //< Fix mode (0: invalid, 1: GNSS Solution, 2: Propagated
-        uint8_t res:5;       //< Reserved
+        uint8_t time_src:3; //< Fix mode (0: invalid, 1: GNSS Solution, 2: Propagated)
+        uint8_t res:5;      //< Reserved>
     } flags;
-} sbp_gpstime_packet_t ; // 11 bytes
+} sbp_gpstime_packet_t ;    // 11 bytes
 
 //Postion LLH
 typedef struct {
-    uint32_t tow;
-    double lat;
-    double lon;
-    double height;
-    uint16_t h_accuracy;
-    uint16_t v_accuracy;
-    uint8_t n_sats;
+    uint32_t tow;           //< GPS Time of Week (unit: ms)
+    double lat;             //< Latitude (unit: degrees)
+    double lon;             //< Longitude (unit: degrees)
+    double height;          //< Height (unit: meters)
+    uint16_t h_accuracy;    //< Horizontal position accuracy estimate (unit: mm)
+    uint16_t v_accuracy;    //< Vertical position accuracy estimate (unit: mm)
+    uint8_t n_sats;         //< Number of satellites used in solution
     struct flags {
-        uint8_t fix_mode:3;  //< Fix mode (0: invalid, 1: GNSS Solution, 2: Propagated
-        uint8_t ins_mode:2;  //< Inertial navigation mode (0: none, 1: INS used)
-        uint8_t res:3;       //< Reserved
+        uint8_t fix_mode:3; //< Fix mode (0: invalid, 1: SPP, 2: DGNSS, 3: Float RTX, 4: Fixed RTX, 5: Dead Reckoning, 6: SBAS Position)
+        uint8_t ins_mode:2; //< Inertial navigation mode (0: none, 1: INS used)
+        uint8_t res:3;      //< Reserved
     } flags;
-} sbp_pos_llh_packet_t;         //34 bytes
+} sbp_pos_llh_packet_t;     //34 bytes
 
 //Dilution of Precision
 typedef struct {
-    uint32_t tow;    //< GPS Time of Week (unit: ms)
-    uint16_t gdop;   //< Geometric Dilution of Precision (unit: 0.01)
-    uint16_t pdop;   //< Position Dilution of Precision (unit: 0.01)
-    uint16_t tdop;   //< Time Dilution of Precision (unit: 0.01)
-    uint16_t hdop;   //< Horizontal Dilution of Precision (unit: 0.01)
-    uint16_t vdop;   //< Vertical Dilution of Precision (unit: 0.01)
+    uint32_t tow;           //< GPS Time of Week (unit: ms)
+    uint16_t gdop;          //< Geometric Dilution of Precision (unit: 0.01)
+    uint16_t pdop;          //< Position Dilution of Precision (unit: 0.01)
+    uint16_t tdop;          //< Time Dilution of Precision (unit: 0.01)
+    uint16_t hdop;          //< Horizontal Dilution of Precision (unit: 0.01)
+    uint16_t vdop;          //< Vertical Dilution of Precision (unit: 0.01)
     struct flags {
-        uint8_t fix_mode:3;  //< Fix mode (0: invalid, 1: SPP, 2: DGNSS, 3: Float RTX, 4: Fixed RTX, 5: Undefined, 6: SBAS Position
-        uint8_t res:4;       //< Reserved
-        bool raim_repair:1;  //< Solution from RAIM?
+        uint8_t fix_mode:3; //< Fix mode (0: invalid, 1: SPP, 2: DGNSS, 3: Float RTX, 4: Fixed RTX, 5: Undefined, 6: SBAS Position)
+        uint8_t res:4;      //< Reserved
+        bool raim_repair:1; //< RAIM repair flag
     } flags;
-} sbp_dops_packet_t ; // 15 bytes
+} sbp_dops_packet_t ;       // 15 bytes
 
 //Velocity in North East Down(NED) coordinates.
 typedef struct {
@@ -137,11 +136,11 @@ typedef struct {
     uint16_t v_accuracy;   //< Vertical velocity accuracy estimate (unit: mm/s)
     uint8_t n_sats;        //< Number of satellites used in solution
     struct flags {
-        uint8_t vel_mode:3;  //< Velocity mode (0: Invalid, 1: Measured Doppler derived, 2: Computed Doppler derived, 3: Dead reckoning)
-        uint8_t ins_mode:2;  //< Inertial navigation mode (0: none, 1: INS used)
-        uint8_t res:3;       //< Reserved
+        uint8_t vel_mode:3;//< Velocity mode (0: Invalid, 1: Measured Doppler derived, 2: Computed Doppler derived, 3: Dead reckoning)
+        uint8_t ins_mode:2;//< Inertial navigation mode (0: none, 1: INS used)
+        uint8_t res:3;     //< Reserved
     } flags;
-} sbp_vel_ned_packet_t; // 22 bytes
+} sbp_vel_ned_packet_t;    //22 bytes
 
 // Timestamped external events
 typedef struct {
@@ -149,9 +148,9 @@ typedef struct {
     uint32_t tow;          //< GPS Time of Week (unit: ms)
     int32_t ns_residual;   //< Nanosecond residual of millisecond-rounded TOW (ranges from -500000 to 500000)
     struct flags {
-        uint8_t level:1;       //< New level of pin values (0: Low (falling edge), 1: High (rising edge))
-        uint8_t quality:1;     //< Time quality values (0: Unknown - don't have nav solution, 1: Good (< 1 microsecond))
-        uint8_t res:6;         //< Reserved
+        uint8_t level:1;   //< New level of pin values (0: Low (falling edge), 1: High (rising edge))
+        uint8_t quality:1; //< Time quality values (0: Unknown - don't have nav solution, 1: Good (< 1 microsecond))
+        uint8_t res:6;     //< Reserved
     } flags;
     uint8_t pin;           //< Pin number (0-9)
 } sbp_ext_event_packet_t ; // 12 bytes
@@ -189,21 +188,14 @@ private:
     uint16_t _crc;
     sbp_decode_state_t _decode_state{};
     
-    sbp_buf_t _sbp_buf{};
+    sbp_buf_t _sbp_msg{};
 
     struct vehicle_gps_position_s *_gps_position {nullptr};
-    /**
-     * Parse the binary SBP packet
-     */
+    /*Parse the SBP packet structure*/
     int parseChar(const uint8_t b);
-    /**
-     * Parse the binary SBP packet
-     */
+    /*Parse the payload structure of each SBP message*/
     void processPayload();
-
-    /**
-     * Reset the parse state machine for a fresh start
-     */
+    /* Reset the parse state machine for a fresh start*/
     void decodeInit(void);
-
+    void updateMessages();
 };

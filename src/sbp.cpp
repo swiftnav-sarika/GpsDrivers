@@ -74,6 +74,11 @@ GPSDriverSBP::configure(unsigned &baudrate, OutputMode output_mode)
 
     baudrate = SBP_BAUDRATE;
 
+    /* Wait for 50ms before receiving */
+    decodeInit();
+    receive(50);
+    decodeInit();
+
     return 0;
 
 }
@@ -90,7 +95,6 @@ GPSDriverSBP::receive(unsigned timeout)
         int ret = read(buf, sizeof(buf), timeout);
 
         if (ret > 0) {
-            /* first read whatever is left */
             if (j < ret) {
                 /* pass received bytes to the packet decoder */
                 while (j < ret) {
@@ -131,8 +135,8 @@ GPSDriverSBP::parseChar(const uint8_t b)
             printf("Preamble Found!!!!\n");
             _rx_buff_count = 0;
             _decode_state = SBP_DECODE_MESSAGEID;
-        } else {
-            decodeInit();
+//        } else {
+//            decodeInit();
         }
         break;
 
@@ -173,26 +177,8 @@ GPSDriverSBP::parseChar(const uint8_t b)
         //printf("Payload %d\n",b);
         if(_rx_buff_count >= _rx_payload_len){
             _rx_buff_count = 0;
-            for(int k=0; k >= _rx_payload_len;k++){
-                printf("Buffer %d\n",_rx_buff[k]);
-
-            }
-
-
-            //            if (ret < 0) {
-            //                // payload not handled, discard message
-            //                decodeInit();
-
-            //            } else if (ret > 0) {
-            //                // payload complete, expecting checksum
-            //                _decode_state = SBP_DECODE_CRC;
-
-            //            } else {
-            //                // expecting more payload, stay in state UBX_DECODE_PAYLOAD
-            //            }
             _decode_state = SBP_DECODE_CRC;
         }
-
         break;
 
         /* Expecting checksum byte */
@@ -204,26 +190,27 @@ GPSDriverSBP::parseChar(const uint8_t b)
             crc = crc16_ccitt((uint8_t*)&(_rx_send_id), 2, crc);
             crc = crc16_ccitt(&_rx_payload_len, 1, crc);
             crc = crc16_ccitt(_rx_buff, _rx_payload_len, crc);
-            printf("crc = %d\n", crc);
-            printf("_rx_crc %d\n",_rx_crc);
+
             if (_rx_crc == crc){
                 printf("Checksum!!\n");
                 processPayload();
+                updateMessages();
                 decodeInit();
-                break;
+                ret = 1;
             } else {
                 printf("Checksum failed!\n");
-                decodeInit();
-                ret = 0;
+                ret = -1;
             }
-
+            //decodeInit();
         }
+        break;
 
     default:
         break;
     }
     return ret;
 }
+
 void
 GPSDriverSBP::processPayload()
 {
@@ -231,68 +218,115 @@ GPSDriverSBP::processPayload()
     switch (_rx_msgtype) {
     case SBP_HEARTBEAT_MSGTYPE:
         printf("I'm a heartbeat message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_heartbeat),(uint8_t*)&(_rx_buff), sizeof(sbp_heartbeat_packet_t));
-        printf("sys_error_flag %d\n",_sbp_buf.sbp_heartbeat.sys_error_flag);
-        printf("io_error_flag %d\n",_sbp_buf.sbp_heartbeat.io_error_flag);
-        printf("nap_error_flag %d\n",_sbp_buf.sbp_heartbeat.nap_error_flag);
-        printf("protocol_minor %d\n",_sbp_buf.sbp_heartbeat.protocol_minor);
-        printf("protocol_major %d\n",_sbp_buf.sbp_heartbeat.protocol_major);
-        printf("ext_antenna_short %d\n",_sbp_buf.sbp_heartbeat.ext_antenna_short);
-        printf("ext_antenna_present %d\n",_sbp_buf.sbp_heartbeat.ext_antenna_present);
+        memcpy((uint8_t *)&(_sbp_msg.sbp_heartbeat),(uint8_t*)&(_rx_buff), sizeof(sbp_heartbeat_packet_t));
         break;
 
     case SBP_GPS_TIME_MSGTYPE:
         printf("I'm a GPS TIME message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_gps_time),(uint8_t*)&(_rx_buff), sizeof(sbp_gpstime_packet_t));
-        printf("wn %d\n",_sbp_buf.sbp_gps_time.wn);
-        printf("tow %d\n",_sbp_buf.sbp_gps_time.tow);
-        printf("ns %d\n",_sbp_buf.sbp_gps_time.ns);
-        printf("time_src %d\n",_sbp_buf.sbp_gps_time.flags.time_src);
-
+        memcpy((uint8_t *)&(_sbp_msg.sbp_gps_time),(uint8_t*)&(_rx_buff), sizeof(sbp_gpstime_packet_t));
         break;
 
     case SBP_POS_LLH_MSGTYPE:
         printf("I'm a POS LLH message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_pos_llh),(uint8_t*)&(_rx_buff), sizeof(sbp_pos_llh_packet_t));
-        printf("tow %d\n",_sbp_buf.sbp_pos_llh.tow);
-        printf("lat %f\n",_sbp_buf.sbp_pos_llh.lat);
-        printf("lon %f\n",_sbp_buf.sbp_pos_llh.lon);
-        printf("height %f\n",_sbp_buf.sbp_pos_llh.height);
-        printf("h_accuracy %d\n",_sbp_buf.sbp_pos_llh.h_accuracy);
-        printf("v_accuracy %d\n",_sbp_buf.sbp_pos_llh.v_accuracy);
-        printf("n_sats %d\n",_sbp_buf.sbp_pos_llh.n_sats);
-        printf("flags %d\n",_sbp_buf.sbp_pos_llh.flags);
-        _gps_position->lat = _sbp_buf.sbp_pos_llh.lat;
-        _gps_position->lon = _sbp_buf.sbp_pos_llh.lon;
-        _gps_position->alt = _sbp_buf.sbp_pos_llh.height;
-        _gps_position->eph = _sbp_buf.sbp_pos_llh.h_accuracy;
-        _gps_position->epv = _sbp_buf.sbp_pos_llh.v_accuracy;
-        _gps_position->fix_type = _sbp_buf.sbp_pos_llh.flags.fix_mode;
-        _gps_position->satellites_used = _sbp_buf.sbp_pos_llh.n_sats;
+        memcpy((uint8_t *)&(_sbp_msg.sbp_pos_llh),(uint8_t*)&(_rx_buff), sizeof(sbp_pos_llh_packet_t));
         break;
 
     case SBP_DOPS_MSGTYPE:
         printf("I'm a SBP DOPS message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_dops),(uint8_t*)&(_rx_buff), sizeof(sbp_dops_packet_t));
-
-        _gps_position->hdop = _sbp_buf.sbp_dops.hdop;
-        _gps_position->vdop = _sbp_buf.sbp_dops.vdop;
+        memcpy((uint8_t *)&(_sbp_msg.sbp_dops),(uint8_t*)&(_rx_buff), sizeof(sbp_dops_packet_t));
         break;
 
     case SBP_VEL_NED_MSGTYPE:
         printf("I'm a SBP VEL NED message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_vel_ned),(uint8_t*)&(_rx_buff), sizeof(sbp_vel_ned_packet_t));
+        memcpy((uint8_t *)&(_sbp_msg.sbp_vel_ned),(uint8_t*)&(_rx_buff), sizeof(sbp_vel_ned_packet_t));
         break;
 
     case SBP_EXT_EVENT_MSGTYPE:
         printf("I'm a SBP EXT_EVENT message!\n");
-        memcpy((uint8_t *)&(_sbp_buf.sbp_ext_event),(uint8_t*)&(_rx_buff), sizeof(sbp_ext_event_packet_t));
+        memcpy((uint8_t *)&(_sbp_msg.sbp_ext_event),(uint8_t*)&(_rx_buff), sizeof(sbp_ext_event_packet_t));
         break;
 
     default:
         break;
     }
 
+}
+
+void
+GPSDriverSBP::updateMessages()
+{
+
+    // GPS position in WGS84 coordinates.
+    //int32 timestamp_time_relative	# timestamp + timestamp_time_relative = Time of the UTC timestamp since system start, (microseconds)
+    // uint64 time_utc_usec		# Timestamp (microseconds, UTC), this is the timestamp which comes from the gps module. It might be unavailable right after cold start, indicated by a value of 0
+    /*the field 'timestamp' is for the position & velocity (microseconds)*/
+    _gps_position->timestamp = _sbp_msg.sbp_gps_time.tow; // time since system start (microseconds)
+    _gps_position->lat = _sbp_msg.sbp_pos_llh.lat; // Latitude in 1E-7 degrees
+    _gps_position->lon = _sbp_msg.sbp_pos_llh.lon; // Longitude in 1E-7 degrees
+    _gps_position->alt = _sbp_msg.sbp_pos_llh.height; // Altitude in 1E-3 meters above MSL, (millimetres)
+    _gps_position->alt_ellipsoid = _sbp_msg.sbp_pos_llh.height; // Altitude in 1E-3 meters bove Ellipsoid, (millimetres)
+
+    //float32 s_variance_m_s		# GPS speed accuracy estimate, (metres/sec)
+    //float32 c_variance_rad		# GPS course accuracy estimate, (radians)
+
+    _gps_position->eph = _sbp_msg.sbp_pos_llh.h_accuracy; // GPS horizontal position accuracy (metres)
+    _gps_position->epv = _sbp_msg.sbp_pos_llh.v_accuracy; // GPS vertical position accuracy (metres)
+    //  uint8 fix_type # 0-1: no fix, 2: 2D fix, 3: 3D fix, 4: RTCM code differential, 5: Real-Time Kinematic, float, 6: Real-Time Kinematic, fixed, 8: Extrapolated. Some applications will not use the value of this field unless it is at least two, so always correctly fill in the fix.
+    switch (_sbp_msg.sbp_pos_llh.flags.fix_mode) {
+    case 0:
+        _gps_position->fix_type = 0;
+        break;
+    case 1:
+        _gps_position->fix_type = 2;
+        break;
+    case 2:
+        _gps_position->fix_type = 4;
+        break;
+    case 3:
+        _gps_position->fix_type = 5;
+        break;
+    case 4:
+        _gps_position->fix_type = 6;
+        break;
+    case 5:
+        _gps_position->fix_type = 8;
+        break;
+    case 6:
+        _gps_position->fix_type = 3;
+        break;
+    default:
+        _gps_position->fix_type = 1;
+        break;
+    }
+
+    _gps_position->satellites_used = _sbp_msg.sbp_pos_llh.n_sats; //Number of satellites used
+    _gps_position->hdop = _sbp_msg.sbp_dops.hdop; // Horizontal dilution of precision
+    _gps_position->vdop = _sbp_msg.sbp_dops.vdop; // Vertical dilution of precision
+
+
+    //float32 vel_m_s			# GPS ground speed, (metres/sec)
+    _gps_position->vel_n_m_s = _sbp_msg.sbp_vel_ned.n; // GPS North velocity, (metres/sec)
+    _gps_position->vel_e_m_s = _sbp_msg.sbp_vel_ned.e; // GPS East velocity, (metres/sec)
+    _gps_position->vel_d_m_s = _sbp_msg.sbp_vel_ned.d ;// GPS Down velocity, (metres/sec)
+    //float32 cog_rad			# Course over ground (NOT heading, but direction of movement), -PI..PI, (radians)
+    if(_sbp_msg.sbp_vel_ned.flags.vel_mode > 0)
+        _gps_position->vel_ned_valid = true; // True if NED velocity is valid
+    else
+        _gps_position->vel_ned_valid = false;
+
+
+    //float32 heading			# heading angle of XYZ body frame rel to NED. Set to NaN if not available and updated (used for dual antenna GPS), (rad, [-PI, PI])
+    //float32 heading_offset		# heading offset of dual antenna array in body frame. Set to NaN if not applicable. (rad, [-PI, PI])
+
+    /*Satellite Info*/
+    /*
+    uint8 SAT_INFO_MAX_SATELLITES = 20
+    uint8 count			    # Number of satellites in satellite info
+    uint8[20] svid	 		# Space vehicle ID [1..255], see scheme below
+    uint8[20] used			# 0: Satellite not used, 1: used for navigation
+    uint8[20] elevation		# Elevation (0: right on top of receiver, 90: on the horizon) of satellite
+    uint8[20] azimuth		# Direction of satellite, 0: 0 deg, 255: 360 deg.
+    uint8[20] snr	        # dBHz, Signal to noise ratio of satellite C/N0, range 0..99, zero when not tracking this satellite.*/
 }
 
 void
@@ -303,7 +337,6 @@ GPSDriverSBP::decodeInit()
     _rx_send_id=0;
     _rx_payload_len=0;
     _crc = 0;
-    _rx_buff_count = 0;
     _decode_state = SBP_DECODE_PREAMBLE;
 }
 
