@@ -44,14 +44,14 @@
 #include "edc.h"
 #include "../../definitions.h"
 
-#define SBP_TIMEOUT_10HZ    200
+#define SBP_TIMEOUT         250   //ms
 #define SBP_BAUDRATE        115200
 #define SBP_PREAMBLE        0x55
 
 // Message types supported byk this driver
-//#define SBP_STARTUP_MSGTYPE         0xFF00
 #define SBP_HEARTBEAT_MSGTYPE       0xFFFF
 #define SBP_GPS_TIME_MSGTYPE        0x0102
+#define SBP_UTC_TIME_MSGTYPE        0x0103
 #define SBP_DOPS_MSGTYPE            0x0208
 #define SBP_POS_LLH_MSGTYPE         0x020A
 //#define SBP_BASELINE_NED_MSGTYPE    0x020C
@@ -94,6 +94,19 @@ typedef struct {
         uint8_t res:5;      //< Reserved>
     } flags;
 } sbp_gpstime_packet_t ;    // 11 bytes
+
+//UTC Time
+typedef struct {
+    uint8_t flags;          //< Indicates source and time validity
+    uint32_t tow;           //< GPS Time of Week rounded to the nearest ms (unit: ms)
+    uint16_t year;          //< Year
+    uint8_t months;         //< Month (range 1 .. 12)
+    uint8_t day;            //< days in the month (range 0-23)
+    uint8_t hours;          //< hours of day (range 0-23)
+    uint8_t minutes;        //< minutes of hour (range 0-59)
+    uint8_t seconds;        //< seconds of minute (range 0-60) rounded down (unit: s)
+    uint8_t nanoseconds;    //< snanoseconds of second (range 0-999999999) (unit: ns)
+} sbp_utctime_packet_t ;    // 16 bytes
 
 //Postion LLH
 typedef struct {
@@ -157,15 +170,17 @@ typedef struct {
 
 #pragma pack(pop)
 
-
 typedef union {
     sbp_heartbeat_packet_t		sbp_heartbeat;
     sbp_gpstime_packet_t        sbp_gps_time;
+    sbp_utctime_packet_t        sbp_utc_time;
     sbp_pos_llh_packet_t		sbp_pos_llh;
     sbp_dops_packet_t           sbp_dops;
     sbp_vel_ned_packet_t        sbp_vel_ned;
     sbp_ext_event_packet_t      sbp_ext_event;
 } sbp_buf_t;
+
+
 
 class GPSDriverSBP : public GPSHelper
 {
@@ -186,6 +201,8 @@ private:
     uint8_t _rx_payload_len;
     uint16_t _rx_crc;
     uint16_t _crc;
+
+    uint64_t _last_heartbeat_received_us;
     sbp_decode_state_t _decode_state{};
     
     sbp_buf_t _sbp_msg{};
@@ -197,5 +214,4 @@ private:
     void processPayload();
     /* Reset the parse state machine for a fresh start*/
     void decodeInit(void);
-    void updateMessages();
 };
