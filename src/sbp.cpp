@@ -89,9 +89,14 @@ GPSDriverSBP::receive(unsigned timeout)
 
     /* timeout additional to poll */
     gps_abstime time_started = gps_absolute_time();
+    printf("gps_absolute_time() = %d\n", gps_absolute_time());
+    printf("timeout = %f\n", timeout);
+    printf("time_started = %f\n", time_started);
     int j = 0;
     while (true) {
         int ret = read(buf, sizeof(buf), timeout);
+        printf("timeout = %f\n", timeout);
+        printf("time_started = %f\n", time_started);
 
         if (ret > 0) {
             if (j < ret) {
@@ -333,30 +338,39 @@ GPSDriverSBP::processPayload()
 
         break;
 
-    case SBP_VEL_NED_MSGTYPE:
+    case SBP_VEL_NED_COV_MSGTYPE:
         printf("I'm a SBP VEL NED message!\n");
-        memcpy((uint8_t *)&(_sbp_msg.sbp_vel_ned),(uint8_t*)&(_rx_buff), sizeof(sbp_vel_ned_packet_t));
+        memcpy((uint8_t *)&(_sbp_msg.sbp_vel_ned_cov),(uint8_t*)&(_rx_buff), sizeof(sbp_vel_ned_cov_packet_t));
 
-        if(_sbp_msg.sbp_vel_ned.flags.vel_mode > 0){
+        if(_sbp_msg.sbp_vel_ned_cov.flags.vel_mode > 0){
 
             _gps_position->vel_ned_valid = true;// True if NED velocity is valid
-            _gps_position->vel_n_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned.n*1000);// GPS North velocity, (metres/sec)
-            _gps_position->vel_e_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned.e*1000);// GPS East velocity, (metres/sec)
-            _gps_position->vel_d_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned.d*1000);// GPS Down velocity, (metres/sec)
+            _gps_position->vel_n_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned_cov.n*1000);// GPS North velocity, (metres/sec)
+            _gps_position->vel_e_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned_cov.e*1000);// GPS East velocity, (metres/sec)
+            _gps_position->vel_d_m_s = static_cast<float>(_sbp_msg.sbp_vel_ned_cov.d*1000);// GPS Down velocity, (metres/sec)
             _gps_position->vel_m_s   = static_cast<float>(sqrtf((_gps_position->vel_n_m_s * _gps_position->vel_n_m_s)
-                                             +(_gps_position->vel_e_m_s * _gps_position->vel_e_m_s)));// GPS ground speed, (metres/sec)
-        }
-        else
+                                                                +(_gps_position->vel_e_m_s * _gps_position->vel_e_m_s)));// GPS ground speed, (metres/sec)
+            cog_rad = atan2f(_gps_position->vel_e_m_s, _gps_position->vel_n_m_s);//Course over ground (NOT heading, but direction of movement), -PI..PI, (radians)
+            if(cog_rad > M_PI)
+                cog_rad = cog_rad - 2*M_PI;
+            else if(cog_rad < -M_PI)
+                cog_rad = cog_rad - 2*M_PI;
+            _gps_position->cog_rad = cog_rad;
+
+            _gps_position->s_variance_m_s = (sqrtf((_sbp_msg.sbp_vel_ned_cov.cov_n_n*_sbp_msg.sbp_vel_ned_cov.cov_n_n)
+                                                  +(_sbp_msg.sbp_vel_ned_cov.cov_e_e*_sbp_msg.sbp_vel_ned_cov.cov_e_e)
+                                                  +(_sbp_msg.sbp_vel_ned_cov.cov_d_d*_sbp_msg.sbp_vel_ned_cov.cov_d_d)));//GPS speed accuracy estimate, (metres/sec)
+
+        } else {
             _gps_position->vel_ned_valid = false;
+            _gps_position->cog_rad = 0;
+            _gps_position->vel_n_m_s = 0;
+            _gps_position->vel_e_m_s = 0;
+            _gps_position->vel_d_m_s = 0;
+            _gps_position->vel_m_s   = 0;
+            _gps_position->s_variance_m_s = 0;
 
-        cog_rad = atan2f(_gps_position->vel_e_m_s, _gps_position->vel_n_m_s);//Course over ground (NOT heading, but direction of movement), -PI..PI, (radians)
-        if(cog_rad > M_PI)
-            cog_rad = cog_rad - 2*M_PI;
-        else if(cog_rad < -M_PI)
-            cog_rad = cog_rad - 2*M_PI;
-        _gps_position->cog_rad = cog_rad;
-        //float32 s_variance_m_s		# GPS speed accuracy estimate, (metres/sec)
-
+        }
         break;
 
     case SBP_EXT_EVENT_MSGTYPE:

@@ -56,6 +56,7 @@
 #define SBP_POS_LLH_MSGTYPE         0x020A
 //#define SBP_BASELINE_NED_MSGTYPE    0x020C
 #define SBP_VEL_NED_MSGTYPE         0x020E
+#define SBP_VEL_NED_COV_MSGTYPE    0x0212
 //#define SBP_TRACKING_STATE_MSGTYPE  0x0013
 #define SBP_EXT_EVENT_MSGTYPE       0x0101
 
@@ -155,6 +156,26 @@ typedef struct {
     } flags;
 } sbp_vel_ned_packet_t;    //22 bytes
 
+//Velocity Covariances in North East Down(NED) coordinates.
+typedef struct {
+    uint32_t tow;    //< GPS Time of Week (unit: ms)
+    int32_t n;       //< Velocity North coordinate (unit: mm/s)
+    int32_t e;       //< Velocity East coordinate  (unit: mm/s)
+    int32_t d;       //< Velocity Down coordinate  (unit: mm/s)
+    float cov_n_n;   //< Covariance of northward measurement (unit: m^2)
+    float con_n_e;   //< Covariance of northward and eastward measurement (unit: m^2)
+    float cov_n_d;   //< Covariance of northward and downward measurement (unit: m^2)
+    float cov_e_e;   //< Covariance of eastward measurement (unit: m^2)
+    float cov_e_d;   //< Covariance of eastward and downward measurement (unit: m^2)
+    float cov_d_d;   //< Covariance of downward measurement (unit: m^2)
+    uint8_t n_sats;  //< Number of satellites used in solution
+    struct flags {
+        uint8_t vel_mode:3;//< Velocity mode (0: Invalid, 1: Measured Doppler derived, 2: Computed Doppler derived, 3: Dead reckoning)
+        uint8_t ins_mode:2;//< Inertial navigation mode (0: none, 1: INS used)
+        uint8_t res:3;     //< Reserved
+    } flags;
+} sbp_vel_ned_cov_packet_t;    //42 bytes
+
 // Timestamped external events
 typedef struct {
     uint16_t wn;           //< GPS week number (unit: weeks)
@@ -177,6 +198,7 @@ typedef union {
     sbp_pos_llh_packet_t		sbp_pos_llh;
     sbp_dops_packet_t           sbp_dops;
     sbp_vel_ned_packet_t        sbp_vel_ned;
+    sbp_vel_ned_cov_packet_t    sbp_vel_ned_cov;
     sbp_ext_event_packet_t      sbp_ext_event;
 } sbp_buf_t;
 
