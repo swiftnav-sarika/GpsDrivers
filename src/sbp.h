@@ -43,6 +43,7 @@
 #include "gps_helper.h"
 #include "edc.h"
 #include "../../definitions.h"
+#include "rtcm.h"
 
 #define SBP_TIMEOUT         250   //ms
 #define SBP_BAUDRATE        115200
@@ -57,7 +58,6 @@
 //#define SBP_BASELINE_NED_MSGTYPE    0x020C
 #define SBP_VEL_NED_MSGTYPE         0x020E
 #define SBP_VEL_NED_COV_MSGTYPE    0x0212
-//#define SBP_TRACKING_STATE_MSGTYPE  0x0013
 #define SBP_EXT_EVENT_MSGTYPE       0x0101
 
 typedef enum {
@@ -69,6 +69,7 @@ typedef enum {
     SBP_DECODE_CRC,
 } sbp_decode_state_t;
 
+class RTCMParsing;
 
 // Swift SBP message definition
 #pragma pack(push, 1)
@@ -225,9 +226,12 @@ private:
     uint16_t _crc;
 
     uint64_t _last_heartbeat_received_us;
+    uint64_t _last_timestamp_time { 0 };
+
     sbp_decode_state_t _decode_state{};
     
     sbp_buf_t _sbp_msg{};
+    void activateRTCMOutput();
 
     struct vehicle_gps_position_s *_gps_position {nullptr};
     /*Parse the SBP packet structure*/
@@ -236,4 +240,6 @@ private:
     void processPayload();
     /* Reset the parse state machine for a fresh start*/
     void decodeInit(void);
+    /*Parse and forward RTCM Messages*/
+    RTCMParsing	*_rtcm_parsing{nullptr};
 };
